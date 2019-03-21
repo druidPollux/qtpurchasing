@@ -41,12 +41,24 @@ QAndroidInAppProduct::QAndroidInAppProduct(QAndroidInAppPurchaseBackend *backend
     : QInAppProduct(price, title, description, productType, identifier, parent)
     , m_backend(backend)
 {
+   m_type = QStringLiteral("inapp");
 }
 
 
 void QAndroidInAppProduct::purchase()
 {
     m_backend->purchaseProduct(this);
+}
+
+void QAndroidInAppProduct::setType( const QString &type )
+{
+    if ( type == QStringLiteral("inapp") || type == QStringLiteral("subs") )
+       m_type = type;
+}
+
+QString QAndroidInAppProduct::type() const
+{
+   return m_type; 
 }
 
 QT_END_NAMESPACE

@@ -59,9 +59,12 @@ public:
 
 
     void purchase();
+    void setType( const QString &type );
+    QString type() const;
 
 private:
     QAndroidInAppPurchaseBackend *m_backend;
+    QString                       m_type;     /* inapp / subs */
 };
 
 QT_END_NAMESPACE

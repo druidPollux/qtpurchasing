@@ -67,6 +67,7 @@ public class QtInAppPurchase
     public static final int RESULT_QTPURCHASING_ERROR = 9; // No match with any already defined response codes
     public static final String TAG = "QtInAppPurchase";
     public static final String TYPE_INAPP = "inapp";
+    public static final String TYPE_SUBS  = "subs";
     public static final int IAP_VERSION = 3;
 
     // Should be in sync with QInAppTransaction::FailureReason
@@ -121,7 +122,6 @@ public class QtInAppPurchase
 
     public void initializeConnection()
     {
-
         Intent serviceIntent = new Intent("com.android.vending.billing.InAppBillingService.BIND");
         serviceIntent.setPackage("com.android.vending");
         try {
@@ -223,6 +223,59 @@ public class QtInAppPurchase
 
     }
 
+    private int queryDetailsSubs( final String productId )
+    {
+        ArrayList<String> productIdList = new ArrayList<String>();
+        productIdList.add(productId);
+
+        try {
+             Bundle productIdBundle = new Bundle();
+             productIdBundle.putStringArrayList("ITEM_ID_LIST", productIdList);
+
+             Bundle bundle = m_service.getSkuDetails(IAP_VERSION,
+                                        m_context.getPackageName(),
+                                        TYPE_SUBS,
+                                        productIdBundle);
+
+             int responseCode = bundleResponseCode(bundle);
+             if (responseCode != RESULT_OK) {
+                 Log.e(TAG, "queryDetails: Couldn't retrieve sku details.");
+                 return RESULT_ERROR; 
+             }
+
+             ArrayList<String> detailsList = bundle.getStringArrayList("DETAILS_LIST");
+             if (detailsList == null) {
+                 Log.e(TAG, "queryDetails: No details list in response.");
+                 return RESULT_ERROR;
+             }
+             for (String details : detailsList) {
+                 try {
+                     JSONObject jo = new JSONObject(details);
+                     String queriedProductId = jo.getString("productId");
+                     String queriedPrice = jo.getString("price");
+                     String queriedTitle = jo.getString("title");
+                     String queriedDescription = jo.getString("description");
+                     if (queriedProductId == null || queriedPrice == null || queriedTitle == null || queriedDescription == null) {
+                         Log.e(TAG, "Data missing from product details.");
+                         return RESULT_ERROR;
+                     } else {
+                         registerProduct(m_nativePointer,
+                                         queriedProductId,
+                                         queriedPrice,
+                                         queriedTitle,
+                                         queriedDescription,
+                                         TYPE_SUBS);
+                     }
+                  } catch (JSONException e) {
+                       e.printStackTrace();
+                  } 
+              }
+          } catch (RemoteException e) {
+              e.printStackTrace();
+          }
+          return RESULT_OK;
+    } 
+
     public void queryDetails(final String[] productIds)
     {
         if (m_service == null) {
@@ -255,13 +308,13 @@ public class QtInAppPurchase
 
                             Bundle bundle = m_service.getSkuDetails(IAP_VERSION,
                                                                     m_context.getPackageName(),
-                                                                    "inapp",
+                                                                    TYPE_INAPP,
                                                                     productIdBundle);
 
                             int responseCode = bundleResponseCode(bundle);
                             if (responseCode != RESULT_OK) {
-                                Log.e(TAG, "queryDetails: Couldn't retrieve sku details.");
-                                continue;
+                                   Log.e(TAG, "queryDetails: Couldn't retrieve sku details.");
+                                   continue;
                             }
 
                             ArrayList<String> detailsList = bundle.getStringArrayList("DETAILS_LIST");
@@ -285,7 +338,8 @@ public class QtInAppPurchase
                                                         queriedProductId,
                                                         queriedPrice,
                                                         queriedTitle,
-                                                        queriedDescription);
+                                                        queriedDescription,
+                                                        TYPE_INAPP);
                                     }
                                 } catch (JSONException e) {
                                     e.printStackTrace();
@@ -297,7 +351,10 @@ public class QtInAppPurchase
                     }
 
                     for (String failedProduct : failedProducts)
-                        queryFailed(m_nativePointer, failedProduct);
+                    {
+                        if ( queryDetailsSubs(failedProduct) != RESULT_OK )
+                           queryFailed(m_nativePointer, failedProduct);
+                    }
                 }
             }
         });
@@ -341,7 +398,6 @@ public class QtInAppPurchase
                 purchaseFailed(requestCode, FAILUREREASON_ERROR, "Signature could not be verified");
                 return;
             }
-
             JSONObject jo = new JSONObject(purchaseData);
             String sku = jo.getString("productId");
             if (!sku.equals(expectedIdentifier)) {
@@ -374,7 +430,7 @@ public class QtInAppPurchase
         m_publicKey = publicKey;
     }
 
-    public IntentSender createBuyIntentSender(String identifier, int requestCode)
+    public IntentSender createBuyIntentSender(String identifier, String type)
     {
         if (m_service == null) {
             Log.e(TAG, "Unable to create buy intent. No IAP service connection.");
@@ -385,24 +441,12 @@ public class QtInAppPurchase
              Bundle purchaseBundle = m_service.getBuyIntent(3,
                                                            m_context.getPackageName(),
                                                            identifier,
-                                                           TYPE_INAPP,
+                                                           type,
                                                            identifier);
              int response = bundleResponseCode(purchaseBundle);
-
              if (response != RESULT_OK) {
-                Log.e(TAG, "Unable to create buy intent. Response code: " + response);
-                String errorString;
-                switch (response) {
-                    case RESULT_BILLING_UNAVAILABLE: errorString = "Billing unavailable"; break;
-                    case RESULT_ITEM_UNAVAILABLE: errorString = "Item unavailable"; break;
-                    case RESULT_DEVELOPER_ERROR: errorString = "Developer error"; break;
-                    case RESULT_ERROR: errorString = "Fatal error occurred"; break;
-                    case RESULT_ITEM_ALREADY_OWNED: errorString = "Item already owned"; break;
-                    default: errorString = "Unknown billing error " + response; break;
-                };
-
-                purchaseFailed(requestCode, FAILUREREASON_ERROR, errorString);
-                return null;
+                 Log.e(TAG, "Unable to create buy intent. Response code: " + response);
+                 return null;
              }
 
              PendingIntent pendingIntent = purchaseBundle.getParcelable("BUY_INTENT");
@@ -453,7 +497,8 @@ public class QtInAppPurchase
                                                String productId,
                                                String price,
                                                String title,
-                                               String description);
+                                               String description,
+                                               String type);
     private native static void purchaseFailed(long nativePointer, int requestCode, int failureReason, String errorString);
     private native static void purchaseSucceeded(long nativePointer,
                                                  int requestCode,
